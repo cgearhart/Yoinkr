@@ -6,17 +6,17 @@ import html5lib
 from html5lib import treebuilders, treewalkers
 
 save_dir = os.path.expanduser('~/Downloads')
-
-base_url = 'http://www.flickr.com/photos/christopherandvalerie/sets/72157631605078931/?page=%d'
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11'}
+
+image_set_urls = ['http://www.flickr.com/photos/christopherandvalerie/sets/72157631605078931/?page=%d' % idx for idx in xrange(1,5)]
 image_num_re = re.compile(r'.*/(\d+)/in/.*')
 
 pic_url = 'http://www.flickr.com/photos/christopherandvalerie/%s/sizes/o/in/set-72157631605078931/'
-re_original_image = re.compile(r'(.+farm9.+/\w+_o.+)')
+original_size_url_re = re.compile(r'(.+farm9.+/\w+_o.+)')
 re_filename = re.compile(r'.+/(\w+_o.+)')
 
 
-def get_html(url,headers_dict):
+def get_resource(url,headers_dict):
     req = urllib2.Request(url)
     for key,header in headers_dict.iteritems():
         req.add_header(key, header)
@@ -24,84 +24,74 @@ def get_html(url,headers_dict):
     return response.read()
 
 
-def parse_with_html5lib(html_doc):
+def html5lib_walker(html_doc):
     p = html5lib.HTMLParser(tree=treebuilders.getTreeBuilder("dom"))
     dom_tree = p.parse(html_doc)
     walker = treewalkers.getTreeWalker("dom")
     return walker(dom_tree)
 
 
-def get_hrefs(dom_walker):
-    links = []
+def parse_urls(url_list, headers_dict, tag_filter):
+    name_list = {}
+
+    for this_url in url_list:
+        html_response = get_resource(this_url,headers_dict)
+        dom_walker = html5lib_walker(html_response)
+        for element in tag_filter(dom_walker):
+            if element:
+                name_list[element] = None  #add id_num to the dictionary as a key (enforce uniqueness)
+
+    return name_list.keys() #return the keys - a unique list of 
+
+
+def get_tags(dom_walker,name,key):
+    tags = []
 
     for token in dom_walker:
-        if token.has_key('data'):
-            if token.has_key('name') and token['name'] == u'a':
-                data = token['data']
-                if data.has_key((None, u'href')):
-                    #print data[(None, u'href')]
-                    links.append(data[(None, u'href')])
-    return links
-
-
-def get_imgs(dom_walker):
-    img = []
-
-    for token in dom_walker:
-        if token.has_key('name') and token['name'] == u'img':
+        if token.has_key('name') and token['name'] == name:
             data = token['data']
-            if data.has_key((None, u'src')):
-                img.append(data[(None, u'src')])
-    return img
+            if data.has_key((None, key)):
+                tags.append(data[(None, key)])
+    return tags
 
 
-def filter_elements(elements, reg_exp):
-    return [reg_exp.match(element).group(1) for element in elements if reg_exp.match(element)]
+def only_hrefs_filter(dom_walker):
+    return get_tags(dom_walker,u'a',u'href')
 
 
-def get_elements(url, element_getter):        
-    html_response = get_html(url,headers)
-    dom_walker = parse_with_html5lib(html_response)
-    return element_getter(dom_walker)
+def only_imgs_filter(dom_walker):
+    return get_tags(dom_walker,u'img',u'src')
 
 
-def collect_names():
-    image_nums = {}
-
-    for this_url in [base_url % n for n in xrange(1,5)]:
-        for num in filter_elements(get_elements(this_url,get_hrefs),image_num_re):
-            if not image_nums.has_key(num):
-                image_nums[num] = None
-    return image_nums.keys()
+def filter_elements(tags, reg_exp):
+    return [reg_exp.match(tag).group(1) for tag in tags if reg_exp.match(tag)]
 
 
-def collect_static_links(pic_list):
-    static_image_list = []
-
-    for num in pic_list:
-        this_url = pic_url % num
-        original_size_image_url = filter_elements(get_elements(this_url,get_imgs), re_original_image)
-        static_image_list += original_size_image_url
-
-    return static_image_list
-
-def download_images(static_links):
-    idx = len(static_links)
-    for url in static_links:
-        img = get_html(url,headers)
+def download_images(url_list):
+    while url_list:
+        url = url_list.pop()
+        img = get_resource(url,headers)
         fname = re_filename.match(url).group(1)
         with open(os.path.join(save_dir,fname),'wb') as f:
-            print '%d: saving %s as %s in %s' % (idx,url,fname,save_dir)
+            print '%d: saving %s as %s in %s' % (len(url_list)+1,url,fname,save_dir)
             f.write(img)
             print 'Done.'
-        idx -= 1
+
+def collect_data(url_list,headers_dict,tag_filter,re_filter):
+    tags = parse_urls(url_list,headers_dict,tag_filter)
+    return filter_elements(tags,re_filter)
+
 
 if __name__=="__main__":
 
     print 'Collecting the names of all images in the set.'
-    image_num_list = collect_names()
-    print 'Found %d images in the set.' % len(image_num_list)
-    print 'Collecting static links to the original size image files.'
-    image_list = collect_static_links(image_num_list)
-    print 'Downloading %d images.' % len(image_list)
-    download_images(image_list)
+    image_ids = collect_data(image_set_urls, headers, only_hrefs_filter, image_num_re)
+
+    image_pages = [pic_url % im_id for im_id in image_ids] #substitute each id number into the picture url template
+
+    print 'Found %d images in the set.' % len(image_pages)
+    print 'Collecting links to the original size version of each image.'
+    original_size_urls = collect_data(image_pages, headers, only_imgs_filter, original_size_url_re)
+    
+    print 'Downloading %d images.' % len(original_size_urls)
+    download_images(original_size_urls)

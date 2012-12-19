@@ -5,18 +5,21 @@ import html5lib
 
 from html5lib import treebuilders, treewalkers
 
+
 save_dir = os.path.expanduser('~/Downloads')
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11'}
 
-image_set_urls = ['http://www.flickr.com/photos/christopherandvalerie/sets/72157631605078931/?page=%d' % idx for idx in xrange(1,5)]
-image_num_re = re.compile(r'.*/(\d+)/in/.*')
-
+set_url = 'http://www.flickr.com/photos/christopherandvalerie/sets/72157631605078931/?page=%d'
+image_set_urls = [set_url % idx for idx in xrange(1,5)]
 pic_url = 'http://www.flickr.com/photos/christopherandvalerie/%s/sizes/o/in/set-72157631605078931/'
-original_size_url_re = re.compile(r'(.+farm9.+/\w+_o.+)')
-re_filename = re.compile(r'.+/(\w+_o.+)')
+
+image_num_re = re.compile(r'.*/(\d+)/in/.*') #cuts the image id number from the url
+original_size_url_re = re.compile(r'(.+farm9.+/\w+_o.+)') #finds links that start with "farm9"
+re_filename = re.compile(r'.+/(\w+_o.+)') #returns the filename portion of the URL
 
 
 def get_resource(url,headers_dict):
+    """open a url and return the contents as a file like object."""
     req = urllib2.Request(url)
     for key,header in headers_dict.iteritems():
         req.add_header(key, header)
@@ -25,6 +28,7 @@ def get_resource(url,headers_dict):
 
 
 def html5lib_walker(html_doc):
+    """given an HTML document, parse it & return a walker object representation"""
     p = html5lib.HTMLParser(tree=treebuilders.getTreeBuilder("dom"))
     dom_tree = p.parse(html_doc)
     walker = treewalkers.getTreeWalker("dom")
@@ -38,10 +42,9 @@ def parse_urls(url_list, headers_dict, tag_filter):
         html_response = get_resource(this_url,headers_dict)
         dom_walker = html5lib_walker(html_response)
         for element in tag_filter(dom_walker):
-            if element:
-                name_list[element] = None  #add id_num to the dictionary as a key (enforce uniqueness)
+            name_list[element] = None  #add id_num to the dictionary as a key (enforces uniqueness)
 
-    return name_list.keys() #return the keys - a unique list of 
+    return name_list.keys()
 
 
 def get_tags(dom_walker,name,key):
@@ -63,10 +66,6 @@ def only_imgs_filter(dom_walker):
     return get_tags(dom_walker,u'img',u'src')
 
 
-def filter_elements(tags, reg_exp):
-    return [reg_exp.match(tag).group(1) for tag in tags if reg_exp.match(tag)]
-
-
 def download_images(url_list):
     while url_list:
         url = url_list.pop()
@@ -79,7 +78,7 @@ def download_images(url_list):
 
 def collect_data(url_list,headers_dict,tag_filter,re_filter):
     tags = parse_urls(url_list,headers_dict,tag_filter)
-    return filter_elements(tags,re_filter)
+    return [re_filter.match(tag).group(1) for tag in tags if re_filter.match(tag)]
 
 
 if __name__=="__main__":

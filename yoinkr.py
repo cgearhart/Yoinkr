@@ -6,7 +6,7 @@ import html5lib
 from html5lib import treebuilders, treewalkers
 
 
-save_dir = os.path.expanduser('~/Downloads')
+save_dir = os.getcwd() #save the files to the current working directory
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11'}
 
 set_url = 'http://www.flickr.com/photos/christopherandvalerie/sets/72157631605078931/?page=%d'
